@@ -1,0 +1,482 @@
+---
+title: "Untitled"
+author: "Team 2"
+date: "2024-06-30"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(skimr)
+library(dplyr)
+library(flextable)
+library(gtsummary) 
+library(ggExtra)
+library(ggpubr)
+library(GGally)
+library(pROC)
+
+```
+#Задание:
+Сформировать таблицы с базовыми описательными статистиками по группам ВЖК+ / ВЖК- (использовать признак ivh, исключив категорию “possible”).
+Выбрать несколько признаков для их визуального анализа средствами ggplot2 и сопутствующих пакетов. Должно быть представлено не менее 4-х различных типов графиков + один график, на котором бы показывалась взаимосвязь не менее 3-х признаков одновременно. 
+Выбрать несколько признаков (минимум один количественный и один категориальный) для их сравнения между группами средствами однофакторного анализа.
+Построить многофакторную модель для оценки взаимосвязи между измеренными признаками и ВЖК. Обосновать выбор признаков в модель.
+Привести интерпретацию полученных результатов.
+
+#Статистика
+
+Читаем данные и создаем таблицы, с которыми работаем
+```{r}
+data <- read_csv("data/raw/vlbw.csv")
+
+write_csv(data, "data/interim/data_vlbw.csv")
+
+```
+
+```{r}
+
+original_data <- read_csv("data/interim/data_vlbw.csv")
+
+```
+
+Убираем possible
+```{r}
+original_data %>% 
+  filter(!ivh == 'possible') -> data_without_possible #таблица где в ivh нет possible
+```
+
+Делаем описательную статистику с помощью skimr
+```{r}
+data_without_possible %>%
+  mutate(ivh = as.factor(ivh)) %>% 
+  filter(ivh == "definite") -> ivh_definite #таблица, где только ivh = definite
+```
+
+```{r}
+data_without_possible %>%
+  mutate(ivh = as.factor(ivh)) %>% 
+  filter(ivh == "absent") -> ivh_absent #таблица, где только ivh = absent
+```
+
+Описательная статистика
+```{r}
+summary_absent <- skim(ivh_absent)
+summary_definite <- skim(ivh_definite)
+```
+
+Записываем описательную статистику как отдельную таблицу
+```{r}
+summary_absent %>% 
+  as_tibble() %>% 
+  mutate(across(where(is.numeric), ~ round(., 3))) -> summary_absent_df
+
+summary_definite %>% 
+  as_tibble() %>% 
+  mutate(across(where(is.numeric), ~ round(., 3))) -> summary_definite_df
+```
+
+Правим полученные таблицы (убираем не нужные строки и столбцы)
+```{r}
+#ГОВНОКОД
+#удаление столбцов
+subset(summary_absent_df, select = - c(1, 5:12)) -> summary_absent_df_sub
+subset(summary_definite_df, select = - c(1, 5:12)) -> summary_definite_df_sub
+
+
+#удаление строк (странный метод - создал столбик с id, потом удалял по этим id)
+summary_absent_df_sub$id <- c(1 : nrow(summary_absent_df_sub))
+
+summary_absent_df_sub[summary_absent_df_sub$id != 1:10, ] -> summary_absent_df_sub
+summary_absent_df_sub[summary_absent_df_sub$id != 16, ] -> summary_absent_df_sub
+summary_absent_df_sub[summary_absent_df_sub$id != 18:20, ] -> summary_absent_df_sub
+
+summary_absent_df_sub[summary_absent_df_sub$id != 22, ] -> summary_absent_df_sub
+summary_absent_df_sub[summary_absent_df_sub$id != 23, ] -> summary_absent_df_sub
+summary_absent_df_sub[summary_absent_df_sub$id != 24, ] -> summary_absent_df_sub
+summary_absent_df_sub[summary_absent_df_sub$id != 25, ] -> summary_absent_df_sub
+summary_absent_df_sub[summary_absent_df_sub$id != 26, ] -> summary_absent_df_sub
+summary_absent_df_sub[summary_absent_df_sub$id != 27, ] -> summary_absent_df_sub
+summary_absent_df_sub
+
+summary_definite_df_sub$id <- c(1 : nrow(summary_definite_df_sub))
+summary_definite_df_sub[summary_definite_df_sub$id != 1:10, ] -> summary_definite_df_sub
+summary_definite_df_sub[summary_definite_df_sub$id != 16, ] -> summary_definite_df_sub
+summary_definite_df_sub[summary_definite_df_sub$id != 18:20, ] -> summary_definite_df_sub
+summary_definite_df_sub[summary_definite_df_sub$id != 22, ] -> summary_definite_df_sub
+summary_definite_df_sub[summary_definite_df_sub$id != 23, ] -> summary_definite_df_sub
+summary_definite_df_sub[summary_definite_df_sub$id != 24, ] -> summary_definite_df_sub
+summary_definite_df_sub[summary_definite_df_sub$id != 25, ] -> summary_definite_df_sub
+summary_definite_df_sub[summary_definite_df_sub$id != 26, ] -> summary_definite_df_sub
+summary_definite_df_sub[summary_definite_df_sub$id != 27, ] -> summary_definite_df_sub
+
+
+```
+
+Переименовываем столбцы
+```{r}
+summary_absent_df_sub %>% 
+  rename(variable = skim_variable, mean = numeric.mean,
+         sd = numeric.sd, min = numeric.p0, p25 = numeric.p25, 
+         "p50(median)" = numeric.p50, p75 = numeric.p75, max = numeric.p100, 
+         hist = numeric.hist) -> summary_absent_df_sub
+
+summary_definite_df_sub %>% 
+  rename(variable = skim_variable, mean = numeric.mean,
+         sd = numeric.sd, min = numeric.p0, p25 = numeric.p25, 
+         "p50 (median)" = numeric.p50, p75 = numeric.p75, max = numeric.p100, 
+         hist = numeric.hist) -> summary_definite_df_sub
+```
+
+
+Наконец-то получаем саммари описательной статистики по количественным данным в таблице с absent (ВЖК-)
+```{r}
+subset(summary_absent_df_sub, select = -c(2, 3, ncol(summary_absent_df_sub))) -> table_absent #еще три лишних столбца удалили
+
+table_absent %>%
+  select(variable, mean, sd, min, max, p25, "p50(median)", p75, hist) %>% 
+  mutate(across(variable, function(x) x %>% as.character() %>% factor(levels = c("hospstay", "lowph", "pltct", "bwt", "gest", "lol", "apg1"), labels = c("Кол-во дней в больнице", "Наименьший рН", "Кол-во тромбоцитов, 10^9", "Вес, гр", "Срок гестации, нед", "Длительность родов, ч", "Кол-во баллов по шкале Апгар")))) %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  align(align = "center", part = "all")
+```
+
+Наконец-то получаем саммари описательной статистики по количественным данным в таблице с definite (ВЖК+)
+```{r}
+subset(summary_definite_df_sub, select = -c(2, 3, ncol(summary_definite_df_sub))) -> table_definite #еще три лишних столбца удалили
+
+table_definite %>%
+  select(variable, mean, sd, min, max, p25, "p50(median)", p75, hist) %>% 
+  mutate(across(variable, function(x) x %>% as.character() %>% factor(levels = c("hospstay", "lowph", "pltct", "bwt", "gest", "lol", "apg1"), labels = c("Кол-во дней в больнице", "Наименьший рН", "Кол-во тромбоцитов, 10^9", "Вес, гр", "Срок гестации, нед", "Длительность родов, ч", "Кол-во баллов по шкале Апгар")))) %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  align(align = "center", part = "all")
+```
+
+
+Также обработали категориальные переменные и самые важные из них представили в таблице
+Таблица по ВЖК- 
+```{r}
+ivh_absent %>% 
+  drop_na(c(pneumo, delivery, twn)) -> ivh_absent_without_na #сначала убираем na из интересующих нас столбцов
+
+ivh_absent_without_na %>% 
+  mutate(across(c(pneumo, delivery, twn), as.factor)) %>% 
+  count(pneumo, delivery, twn, .drop = F) %>%
+  mutate("Относительная частота" = ((n / sum(n))*100) %>% round(2) %>% str_c("%")) %>%
+  mutate(across(pneumo, function(x) x %>% as.character() %>% factor(levels = c("0", "1"), labels = c("Есть", "Нет")))) %>% 
+  mutate(across(twn, function(x) x %>% as.character() %>% factor(levels = c("0", "1"), labels = c("Одноплодная", "Многоплодная")))) %>% 
+  rename("Пневмоторакс" = pneumo, "Способ родоразрешения" = delivery, 
+         "Одноплодная или многоплодная беременность" = twn, "Количество" = n) %>%
+  flextable() %>% 
+  theme_box() %>%  
+  merge_v(c("Пневмоторакс", "Способ родоразрешения"))
+
+```
+
+Таблица по ВЖК+
+```{r}
+ivh_absent %>% 
+  drop_na(c(pneumo, delivery, twn)) -> ivh_absent_without_na #сначала убираем na из интересующих нас столбцов
+
+ivh_definite_without_na %>% 
+  mutate(across(c(pneumo, delivery, twn), as.factor)) %>% 
+  count(pneumo, delivery, twn, .drop = F) %>%
+  mutate("Относительная частота" = ((n / sum(n))*100) %>% round(2) %>% str_c("%")) %>%
+  mutate(across(pneumo, function(x) x %>% as.character() %>% factor(levels = c("0", "1"), labels = c("Есть", "Нет")))) %>% 
+  mutate(across(twn, function(x) x %>% as.character() %>% factor(levels = c("0", "1"), labels = c("Одноплодная", "Многоплодная")))) %>% 
+  rename("Пневмоторакс" = pneumo, "Способ родоразрешения" = delivery, 
+         "Одноплодная или многоплодная беременность" = twn, "Количество" = n) %>%
+  flextable() %>% 
+  theme_box() %>%  
+  merge_v(c("Пневмоторакс", "Способ родоразрешения"))
+
+
+```
+
+#Визуализация
+Обработка данных
+```{r}
+raw <- read_csv("data/raw/vlbw.csv")
+raw <- subset(raw, ivh !="possible")
+raw <- raw[, -which(names(raw) == c("year", "birth", "exit"))] # удаляем переменные с датой из-за ошибок в датасете 
+raw$ivh <- as.factor(raw$ivh)
+raw$sex <- as.factor(raw$sex)
+raw$dead <- factor(raw$dead, labels = c("Alive", "Dead"))
+raw <- subset(raw,is.na(sex)==F)
+```
+##График скрипка
+
+```{r , echo=FALSE}
+ggplot(raw, aes(x=ivh, y=bwt))+
+  geom_violin(aes(fill = ivh))+
+  geom_boxplot(width = 0.05,
+             colour = "grey50")+
+  facet_grid(sex~dead) +
+  labs(
+    title = "Распределение веса детей в зависимости от наличия ВЖК, пола и исхода",
+    x = "ВЖК",
+    y = "Вес, гр"
+  ) +
+  scale_fill_manual(name = "ВЖК",
+                    labels = c("Отсутствие", "Наличие"), values = c(c("absent" = "red2", "definite" = "lightblue"))) +
+  scale_x_discrete(labels = c("Отсутствие", "Наличие"))
+
+
+```
+## Гистограмма
+```{r}
+ggplot(raw) +
+  geom_histogram(aes(x = bwt),
+                 fill = 'red',
+                 colour = "black",
+                 bins = 20) +
+  labs(
+    title = "Распределение веса детей в выборке",
+    x = "Вес, гр",
+    y = "Количество с данным весом"
+  )
+  theme_bw()
+
+
+```
+
+## Боксплот
+```{r}
+ggplot(raw) +
+  geom_boxplot(aes(x = ivh, y = pltct, fill = ivh),
+               outliers =F,
+               width = 0.4,
+               ) +
+  labs(
+    title = "Количество тромбоцитов в группах ВЖК+ и ВЖК-",
+    x = "ВЖК",
+    y = "Тромбоциты, 10^9"
+  ) +
+  scale_fill_manual(name = "ВЖК",
+                   labels = c("ВЖК-", "ВЖК+"), values = c("absent" = "pink2", "definite" = "lightblue")) +
+  scale_x_discrete(labels = c("ВЖК-", "ВЖК+")) +
+  theme_bw()
+```
+
+##Барплот
+
+```{r}
+ggplot(raw) +
+  geom_bar(aes(x = apg1, fill = dead)) +
+  labs(
+    title = "Распределение новорожденных по баллам шкалы Апгар",
+    x = "Шкала Апгар",
+    y = "Количество"
+  ) +
+  scale_fill_manual(name = "Исход",
+                   labels = c("Выжил", "Умер"), values = c("Alive" = "pink2", "Dead" = "lightblue")) +
+  scale_x_continuous(limits = c(0, 10),
+                     breaks = c(seq(1, 1, 10),
+                                seq(0, 10, 1))) +
+  theme_bw()
+
+
+```
+
+
+
+##Точечная диаграмма + фасет
+```{r}
+data_without_possible %>% 
+  drop_na(apg1) -> apg1_without_na
+
+ggplot(apg1_without_na, aes(x = bwt, y = gest)) +
+  geom_point(aes(x = bwt, y = gest, fill = ivh),
+             size = 1,
+             shape = 21, 
+             stroke = 0.8,
+             position = position_jitter(width = 2, height = 2)) +
+  facet_wrap(vars(apg1)) +
+  ggtitle("Распределение веса и гестационного возраста новорожденных с и без ВЖК по шкале Апгар") +
+  stat_smooth(method = lm) +
+  theme(
+    plot.title = element_text(size = 10),
+    axis.text.x = element_text(size = 7,
+                               angle = 20),
+    ) + 
+  labs(
+    x = "Вес, гр",
+    y = "Возраст, нед",
+  ) +
+  scale_fill_manual(name = "ВЖК",
+                    labels = c("Отсутствие", "Наличие"), values = c("absent" = "red3", "definite" = "lightblue")) 
+  
+
+
+```
+```{r}
+aov(bwt~gest*apg1, data = apg1_without_na) %>% summary()
+
+```
+p <0.05 есть разница между возрастом, весом 
+
+
+#Однофакторный анализ
+
+```{r}
+df=read.csv("data/originals/vlbw.csv")
+df <- subset(df, ivh != 'possible')
+```
+
+#Построение однофакторной дисперсионной модели, объясняющей взаимосвязь веса новорожденных от расы
+```{r echo=F}
+df=subset(df,is.na(race)==F)
+oneway.test(bwt~ivh,data=df)  
+
+ggplot(df,aes(y=bwt, x=ivh))+
+  geom_boxplot(outlier.shape = NA, colour = "cadetblue3")+
+  ggtitle("Сравнение веса новорожденных в зависимости от ВЖК")+
+  xlab("ВЖК")+
+  ylab("Вес, гр")+
+  geom_jitter(width = 0.1, colour = "cornsilk4")
+```
+### так как p-value меньше 0,05, значит мы отвергаем нулевую гипотезу о том, что средние в группах равны => средние отличаются, есть взаимосвязь между ВЖК и весом новорожденных
+
+#Построение однофакторной дисперсионной модели, объясняющей взаимосвязь веса новорожденных от их оценки по шкале Апгар
+``````{r echo=F}
+df=subset(df,is.na(apg1)==F)
+aov(bwt~as.factor(apg1),data=df) %>%  summary()
+
+ggplot(df,aes(y=bwt, x=as.factor(apg1)))+
+  geom_boxplot(outlier.shape = NA, colour = "cadetblue3")+
+  ggtitle("Сравнение веса новорожденных в зависимости баллов шкалы Апгар")+
+  xlab("Шкала Апгар")+
+  ylab("Вес, гр")+
+  geom_jitter(width = 0.1, colour = "cornsilk4")
+```
+###так как p-value сильно меньше 0,05, значит мы отвергаем нулевую гипотезу => есть взаимосвязь между смертностью от кровоизлияния и значениями шкалы Апгара
+
+
+#Построение однофакторной дисперсионной модели, объясняющей взаимосвязь кровоизлияния и гестационного возраста
+
+```{r}
+df=subset(df,is.na(ivh)==F)
+aov(gest~as.factor(ivh),data=df) %>%  summary()
+
+ggplot(df,aes(y=gest, x=as.factor(ivh)))+
+  geom_boxplot(outlier.shape = NA, colour = "cadetblue3")+
+  ggtitle("Сравнение гестационного возраста в зависимости от кровоизлияния")+
+  xlab("Кровоизлияние")+
+  ylab("Гестационный возраст, недели")+
+  geom_jitter(width = 0.1, colour = "cornsilk4")
+```
+####так как p-value сильно меньше 0,05, значит мы отвергаем нулевую гипотезу => есть взаимосвязь между наличием кровоизлияния и гестационным возрастом
+
+
+```{r}
+df=subset(df,is.na(ivh)==F)
+aov(bwt~as.factor(dead),data=df) %>%  summary()
+
+ggplot(df,aes(y=bwt, x=as.factor(dead)))+
+  geom_boxplot(outlier.shape = NA, colour = "cadetblue3")+
+  ggtitle("Сравнение веса новорожденным в зависимости от исхода")+
+  xlab("Исход")+
+  ylab("Вес при рождении,г")+
+  geom_jitter(width = 0.1, colour = "cornsilk4") +
+  scale_x_discrete(labels = c("Выжил", "Умер"))
+
+
+```
+
+###так как p-value сильно меньше 0,05, значит мы отвергаем нулевую гипотезу  => есть взаимосвязь между кровоизлиянием и весом новорожденных
+
+
+#Многофакторная модель для оценки взаимосвязи между измеренными признаками и ВЖК
+
+### Выбираем только полные случаи (во всех переенных есть значения)
+```{r}
+raw_comp.cases <- raw[complete.cases(raw), ]
+
+numeric_cols <- sapply(raw_comp.cases, is.numeric)
+sapply(raw_comp.cases[, numeric_cols], sd)
+```
+Строим 
+
+```{r plot-ggpairs-noMissing}
+gg_pairs <- ggpairs(raw_comp.cases, aes(color = ivh))+theme_bw()
+gg_pairs
+```
+#ВЫбор Предикторов
+##Строим Лоистическую модель
+```{r}
+fit.logit <- glm(ivh~., data=raw_comp.cases, family = binomial())
+summary(fit.logit)
+
+```
+
+## При предварительном исследовании были выбраны предикторы с уровнем значимости до 0.1
+
+```{r}
+fit.logit2 <- glm(ivh~pltct+vent+ipe+dead+apg1+delivery, data=raw_comp.cases, family = binomial())
+summary(fit.logit2)
+```
+
+
+```{r}
+coefs_full_model <- ggcoef_model(fit.logit2)
+  coefs_full_model
+```
+
+### Проверяем модель на выборке,где были исключены NA в предикторах (в остальных переменных NA остаются). 
+
+```{r}
+raw02 <- subset(raw,is.na(c(pltct))==F)
+raw02 <- subset(raw02,is.na(c(vent))==F)
+raw02 <- subset(raw02,is.na(c(ipe))==F)
+raw02 <- subset(raw02,is.na(c( dead))==F)
+raw02 <- subset(raw02,is.na(c(apg1))==F)
+raw02 <- subset(raw02,is.na(c(delivery))==F)
+
+train <- sample(nrow(raw02), 0.7*nrow(raw02))
+raw02.train <- raw02[train,]
+raw02.validate <- raw02[-train,]
+
+```
+
+## Строим новую модель на  новой выборке
+
+```{r}
+fit.logit3 <- glm(ivh~pltct+vent+ipe+dead+apg1+delivery, data=raw02.train, family = binomial())
+summary(fit.logit3)
+```
+
+Проверяем модель
+
+```{r model-probs}
+  prob <- predict(fit.logit3, raw02.validate, type="response")
+head(prob)
+```
+
+
+```{r logit-perf}
+logit.pred <- factor(prob > .5, levels=c(FALSE, TRUE), labels = c("IVH-","IVH+"))
+
+logit.perf <- table(raw02.validate$ivh, logit.pred, dnn = c("Actual", "Predicted") )
+logit.perf #performance of logistic regression
+
+
+table(raw02.validate$ivh)
+```
+
+### НАходим ROC и  AuC
+
+```{r}
+ # Create a ROC curve
+  ROC <- roc(as.numeric(raw02.validate$ivh), as.numeric(logit.pred))
+  
+# Calculate the area under the curve (AUC)
+  auc(ROC)
+  # Plot the ROC curve
+  plot(ROC, col = "blue")
+  
+  
+```
+
+
+
